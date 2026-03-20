@@ -1,431 +1,29 @@
-import csv
-import json
-import math
 import random
 import sys
-import matplotlib.pyplot as plt
 
-
-LEARNING_RATE = 0.01
-EPOCHS = 50
-MODEL_PATH = "model.json"
-LOSS_PLOT_PATH = "loss.png"
-ACCURACY_PLOT_PATH = "accuracy.png"
-
-
-def load_dataset(path):
-    X = []
-    y = []
-
-    with open(path, "r", newline="", encoding="utf-8") as csvfile:
-        reader = csv.reader(csvfile)
-
-        for row in reader:
-            if len(row) < 3:
-                continue
-
-            label = row[1]
-            features = row[2:]
-
-            X.append([float(value) for value in features])
-
-            if label == "M":
-                y.append(1)
-            elif label == "B":
-                y.append(0)
-            else:
-                raise ValueError(f"Unknown label: {label}")
-
-    return X, y
-
-
-def compute_mean(values):
-    return sum(values) / len(values)
-
-
-def compute_std(values, mean):
-    variance = sum((x - mean) ** 2 for x in values) / len(values)
-    return math.sqrt(variance)
-
-
-def compute_normalization_stats(X):
-    if not X:
-        raise ValueError("Empty dataset")
-
-    n_features = len(X[0])
-    means = []
-    stds = []
-
-    for j in range(n_features):
-        column = [row[j] for row in X]
-        mean = compute_mean(column)
-        std = compute_std(column, mean)
-        means.append(mean)
-        stds.append(std)
-
-    return means, stds
-
-
-def normalize_dataset(X, means, stds):
-    X_normalized = []
-
-    for row in X:
-        normalized_row = []
-
-        for j in range(len(row)):
-            if stds[j] == 0:
-                normalized_value = 0.0
-            else:
-                normalized_value = (row[j] - means[j]) / stds[j]
-
-            normalized_row.append(normalized_value)
-
-        X_normalized.append(normalized_row)
-
-    return X_normalized
-
-
-def one_hot_encode(label):
-    if label == 0:
-        return [1.0, 0.0]
-    return [0.0, 1.0]
-
-
-def initialize_layer(input_size, output_size):
-    limit = math.sqrt(6 / (input_size + output_size))
-
-    weights = []
-    for _ in range(output_size):
-        neuron_weights = []
-        for _ in range(input_size):
-            neuron_weights.append(random.uniform(-limit, limit))
-        weights.append(neuron_weights)
-
-    biases = [0.0 for _ in range(output_size)]
-
-    return weights, biases
-
-
-def initialize_network(input_size, hidden_sizes, output_size):
-    layer_sizes = [input_size] + hidden_sizes + [output_size]
-    network = []
-
-    for i in range(len(layer_sizes) - 1):
-        weights, biases = initialize_layer(layer_sizes[i], layer_sizes[i + 1])
-        network.append({
-            "weights": weights,
-            "biases": biases
-        })
-
-    return network
-
-
-def sigmoid(x):
-    if x >= 0:
-        return 1.0 / (1.0 + math.exp(-x))
-    exp_x = math.exp(x)
-    return exp_x / (1.0 + exp_x)
-
-
-def sigmoid_derivative_from_activation(a):
-    return a * (1.0 - a)
-
-
-def softmax(values):
-    max_value = max(values)
-    exp_values = [math.exp(v - max_value) for v in values]
-    total = sum(exp_values)
-    return [v / total for v in exp_values]
-
-
-def compute_layer_output(inputs, weights, biases, activation):
-    z_values = []
-    outputs = []
-
-    for neuron_index in range(len(weights)):
-        weighted_sum = biases[neuron_index]
-
-        for input_index in range(len(inputs)):
-            weighted_sum += inputs[input_index] * weights[neuron_index][input_index]
-
-        z_values.append(weighted_sum)
-
-        if activation == "sigmoid":
-            outputs.append(sigmoid(weighted_sum))
-        elif activation == "softmax":
-            pass
-        else:
-            raise ValueError(f"Unknown activation: {activation}")
-
-    if activation == "softmax":
-        outputs = softmax(z_values)
-
-    return z_values, outputs
-
-
-def forward_sample(network, x):
-    z1, a1 = compute_layer_output(
-        x,
-        network[0]["weights"],
-        network[0]["biases"],
-        "sigmoid"
-    )
-
-    z2, a2 = compute_layer_output(
-        a1,
-        network[1]["weights"],
-        network[1]["biases"],
-        "sigmoid"
-    )
-
-    z3, a3 = compute_layer_output(
-        a2,
-        network[2]["weights"],
-        network[2]["biases"],
-        "softmax"
-    )
-
-    cache = {
-        "a0": x,
-        "z1": z1,
-        "a1": a1,
-        "z2": z2,
-        "a2": a2,
-        "z3": z3,
-        "a3": a3
-    }
-
-    return a3, cache
-
-
-def compute_loss(y_true, y_pred):
-    epsilon = 1e-15
-    total = 0.0
-
-    for i in range(len(y_true)):
-        total += y_true[i] * math.log(y_pred[i] + epsilon)
-
-    return -total
-
-
-def predict_class(probabilities):
-    if probabilities[1] > probabilities[0]:
-        return 1
-    return 0
-
-
-def evaluate_dataset(network, X, y):
-    total_loss = 0.0
-    correct = 0
-
-    for i in range(len(X)):
-        y_pred, _ = forward_sample(network, X[i])
-        y_true = one_hot_encode(y[i])
-
-        total_loss += compute_loss(y_true, y_pred)
-
-        predicted_label = predict_class(y_pred)
-        if predicted_label == y[i]:
-            correct += 1
-
-    avg_loss = total_loss / len(X)
-    accuracy = correct / len(X)
-
-    return avg_loss, accuracy
-
-
-def compute_gradients(network, cache, y_true):
-    a0 = cache["a0"]
-    a1 = cache["a1"]
-    a2 = cache["a2"]
-    a3 = cache["a3"]
-
-    # Delta output layer: softmax + cross-entropy
-    delta3 = []
-    for i in range(len(a3)):
-        delta3.append(a3[i] - y_true[i])
-
-    # Delta hidden layer 2
-    delta2 = []
-    for j in range(len(a2)):
-        weighted_error = 0.0
-        for k in range(len(delta3)):
-            weighted_error += network[2]["weights"][k][j] * delta3[k]
-
-        delta2.append(weighted_error * sigmoid_derivative_from_activation(a2[j]))
-
-    # Delta hidden layer 1
-    delta1 = []
-    for j in range(len(a1)):
-        weighted_error = 0.0
-        for k in range(len(delta2)):
-            weighted_error += network[1]["weights"][k][j] * delta2[k]
-
-        delta1.append(weighted_error * sigmoid_derivative_from_activation(a1[j]))
-
-    gradients = {
-        "dW3": [],
-        "db3": delta3[:],
-        "dW2": [],
-        "db2": delta2[:],
-        "dW1": [],
-        "db1": delta1[:]
-    }
-
-    # Gradients layer 3
-    for neuron_index in range(len(delta3)):
-        row = []
-        for input_index in range(len(a2)):
-            row.append(delta3[neuron_index] * a2[input_index])
-        gradients["dW3"].append(row)
-
-    # Gradients layer 2
-    for neuron_index in range(len(delta2)):
-        row = []
-        for input_index in range(len(a1)):
-            row.append(delta2[neuron_index] * a1[input_index])
-        gradients["dW2"].append(row)
-
-    # Gradients layer 1
-    for neuron_index in range(len(delta1)):
-        row = []
-        for input_index in range(len(a0)):
-            row.append(delta1[neuron_index] * a0[input_index])
-        gradients["dW1"].append(row)
-
-    return gradients
-
-
-def apply_gradients(network, gradients, learning_rate):
-    # Layer 3
-    for neuron_index in range(len(network[2]["weights"])):
-        for input_index in range(len(network[2]["weights"][neuron_index])):
-            network[2]["weights"][neuron_index][input_index] -= (
-                learning_rate * gradients["dW3"][neuron_index][input_index]
-            )
-        network[2]["biases"][neuron_index] -= learning_rate * gradients["db3"][neuron_index]
-
-    # Layer 2
-    for neuron_index in range(len(network[1]["weights"])):
-        for input_index in range(len(network[1]["weights"][neuron_index])):
-            network[1]["weights"][neuron_index][input_index] -= (
-                learning_rate * gradients["dW2"][neuron_index][input_index]
-            )
-        network[1]["biases"][neuron_index] -= learning_rate * gradients["db2"][neuron_index]
-
-    # Layer 1
-    for neuron_index in range(len(network[0]["weights"])):
-        for input_index in range(len(network[0]["weights"][neuron_index])):
-            network[0]["weights"][neuron_index][input_index] -= (
-                learning_rate * gradients["dW1"][neuron_index][input_index]
-            )
-        network[0]["biases"][neuron_index] -= learning_rate * gradients["db1"][neuron_index]
-
-
-
-def copy_network(network):
-    copied = []
-
-    for layer in network:
-        copied_layer = {
-            "weights": [row[:] for row in layer["weights"]],
-            "biases": layer["biases"][:]
-        }
-        copied.append(copied_layer)
-
-    return copied
-
-
-def train(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate):
-    history = {
-        "loss": [],
-        "val_loss": [],
-        "accuracy": [],
-        "val_accuracy": []
-    }
-
-    best_val_loss = float("inf")
-    best_network = copy_network(network)
-    best_epoch = 0
-
-    for epoch in range(epochs):
-        indices = list(range(len(X_train)))
-        random.shuffle(indices)
-
-        for i in indices:
-            y_pred, cache = forward_sample(network, X_train[i])
-            y_true = one_hot_encode(y_train[i])
-
-            gradients = compute_gradients(network, cache, y_true)
-            apply_gradients(network, gradients, learning_rate)
-
-        train_loss, train_acc = evaluate_dataset(network, X_train, y_train)
-        valid_loss, valid_acc = evaluate_dataset(network, X_valid, y_valid)
-
-        history["loss"].append(train_loss)
-        history["val_loss"].append(valid_loss)
-        history["accuracy"].append(train_acc)
-        history["val_accuracy"].append(valid_acc)
-
-        if valid_loss < best_val_loss:
-            best_val_loss = valid_loss
-            best_network = copy_network(network)
-            best_epoch = epoch + 1
-
-        print(
-            f"epoch {epoch + 1:03d}/{epochs} - "
-            f"loss: {train_loss:.4f} - "
-            f"accuracy: {train_acc:.4f} - "
-            f"val_loss: {valid_loss:.4f} - "
-            f"val_accuracy: {valid_acc:.4f}"
-        )
-
-    print(f"\nBest validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
-
-    return history, best_network
-
-
-def save_model(path, network, means, stds):
-    model_data = {
-        "network": network,
-        "means": means,
-        "stds": stds
-    }
-
-    with open(path, "w", encoding="utf-8") as file:
-        json.dump(model_data, file)
-
-
-def plot_loss(history, path):
-    epochs = range(1, len(history["loss"]) + 1)
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(epochs, history["loss"], label="train loss")
-    plt.plot(epochs, history["val_loss"], label="validation loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Learning Curve - Loss")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
-
-
-def plot_accuracy(history, path):
-    epochs = range(1, len(history["accuracy"]) + 1)
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(epochs, history["accuracy"], label="train accuracy")
-    plt.plot(epochs, history["val_accuracy"], label="validation accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.title("Learning Curve - Accuracy")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
+from config import (
+    LEARNING_RATE,
+    EPOCHS,
+    HIDDEN_SIZES,
+    MODEL_PATH,
+    LOSS_PLOT_PATH,
+    ACCURACY_PLOT_PATH,
+)
+from data_utils import (
+    load_dataset,
+    compute_normalization_stats,
+    normalize_dataset,
+    one_hot_encode,
+)
+from model_utils import (
+    initialize_network,
+    train_model,
+    save_model,
+)
+from plot_utils import (
+    plot_loss,
+    plot_accuracy,
+)
 
 
 def main():
@@ -453,18 +51,19 @@ def main():
 
         network = initialize_network(
             input_size=len(X_train[0]),
-            hidden_sizes=[16, 16],
+            hidden_sizes=HIDDEN_SIZES,
             output_size=2
         )
 
-        history, best_network = train(
+        history, best_network = train_model(
             network,
             X_train,
             y_train,
             X_valid,
             y_valid,
             epochs=EPOCHS,
-            learning_rate=LEARNING_RATE
+            learning_rate=LEARNING_RATE,
+            one_hot_encode=one_hot_encode
         )
 
         save_model(MODEL_PATH, best_network, means, stds)
