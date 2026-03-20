@@ -3,10 +3,14 @@ import json
 import math
 import random
 import sys
+import matplotlib.pyplot as plt
 
 
-LEARNING_RATE = 0.05
-EPOCHS = 200
+LEARNING_RATE = 0.01
+EPOCHS = 50
+MODEL_PATH = "model.json"
+LOSS_PLOT_PATH = "loss.png"
+ACCURACY_PLOT_PATH = "accuracy.png"
 
 
 def load_dataset(path):
@@ -104,7 +108,6 @@ def initialize_layer(input_size, output_size):
 
 def initialize_network(input_size, hidden_sizes, output_size):
     layer_sizes = [input_size] + hidden_sizes + [output_size]
-
     network = []
 
     for i in range(len(layer_sizes) - 1):
@@ -231,26 +234,18 @@ def evaluate_dataset(network, X, y):
     return avg_loss, accuracy
 
 
-def backward_sample(network, cache, y_true, learning_rate):
+def compute_gradients(network, cache, y_true):
     a0 = cache["a0"]
     a1 = cache["a1"]
     a2 = cache["a2"]
     a3 = cache["a3"]
 
-    # Softmax + cross-entropy
+    # Delta output layer: softmax + cross-entropy
     delta3 = []
     for i in range(len(a3)):
         delta3.append(a3[i] - y_true[i])
 
-    # Layer 3 gradients
-    for neuron_index in range(len(network[2]["weights"])):
-        for input_index in range(len(network[2]["weights"][neuron_index])):
-            gradient = delta3[neuron_index] * a2[input_index]
-            network[2]["weights"][neuron_index][input_index] -= learning_rate * gradient
-
-        network[2]["biases"][neuron_index] -= learning_rate * delta3[neuron_index]
-
-    # Hidden layer 2 delta
+    # Delta hidden layer 2
     delta2 = []
     for j in range(len(a2)):
         weighted_error = 0.0
@@ -259,15 +254,7 @@ def backward_sample(network, cache, y_true, learning_rate):
 
         delta2.append(weighted_error * sigmoid_derivative_from_activation(a2[j]))
 
-    # Layer 2 gradients
-    for neuron_index in range(len(network[1]["weights"])):
-        for input_index in range(len(network[1]["weights"][neuron_index])):
-            gradient = delta2[neuron_index] * a1[input_index]
-            network[1]["weights"][neuron_index][input_index] -= learning_rate * gradient
-
-        network[1]["biases"][neuron_index] -= learning_rate * delta2[neuron_index]
-
-    # Hidden layer 1 delta
+    # Delta hidden layer 1
     delta1 = []
     for j in range(len(a1)):
         weighted_error = 0.0
@@ -276,13 +263,77 @@ def backward_sample(network, cache, y_true, learning_rate):
 
         delta1.append(weighted_error * sigmoid_derivative_from_activation(a1[j]))
 
-    # Layer 1 gradients
+    gradients = {
+        "dW3": [],
+        "db3": delta3[:],
+        "dW2": [],
+        "db2": delta2[:],
+        "dW1": [],
+        "db1": delta1[:]
+    }
+
+    # Gradients layer 3
+    for neuron_index in range(len(delta3)):
+        row = []
+        for input_index in range(len(a2)):
+            row.append(delta3[neuron_index] * a2[input_index])
+        gradients["dW3"].append(row)
+
+    # Gradients layer 2
+    for neuron_index in range(len(delta2)):
+        row = []
+        for input_index in range(len(a1)):
+            row.append(delta2[neuron_index] * a1[input_index])
+        gradients["dW2"].append(row)
+
+    # Gradients layer 1
+    for neuron_index in range(len(delta1)):
+        row = []
+        for input_index in range(len(a0)):
+            row.append(delta1[neuron_index] * a0[input_index])
+        gradients["dW1"].append(row)
+
+    return gradients
+
+
+def apply_gradients(network, gradients, learning_rate):
+    # Layer 3
+    for neuron_index in range(len(network[2]["weights"])):
+        for input_index in range(len(network[2]["weights"][neuron_index])):
+            network[2]["weights"][neuron_index][input_index] -= (
+                learning_rate * gradients["dW3"][neuron_index][input_index]
+            )
+        network[2]["biases"][neuron_index] -= learning_rate * gradients["db3"][neuron_index]
+
+    # Layer 2
+    for neuron_index in range(len(network[1]["weights"])):
+        for input_index in range(len(network[1]["weights"][neuron_index])):
+            network[1]["weights"][neuron_index][input_index] -= (
+                learning_rate * gradients["dW2"][neuron_index][input_index]
+            )
+        network[1]["biases"][neuron_index] -= learning_rate * gradients["db2"][neuron_index]
+
+    # Layer 1
     for neuron_index in range(len(network[0]["weights"])):
         for input_index in range(len(network[0]["weights"][neuron_index])):
-            gradient = delta1[neuron_index] * a0[input_index]
-            network[0]["weights"][neuron_index][input_index] -= learning_rate * gradient
+            network[0]["weights"][neuron_index][input_index] -= (
+                learning_rate * gradients["dW1"][neuron_index][input_index]
+            )
+        network[0]["biases"][neuron_index] -= learning_rate * gradients["db1"][neuron_index]
 
-        network[0]["biases"][neuron_index] -= learning_rate * delta1[neuron_index]
+
+
+def copy_network(network):
+    copied = []
+
+    for layer in network:
+        copied_layer = {
+            "weights": [row[:] for row in layer["weights"]],
+            "biases": layer["biases"][:]
+        }
+        copied.append(copied_layer)
+
+    return copied
 
 
 def train(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate):
@@ -293,11 +344,20 @@ def train(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate):
         "val_accuracy": []
     }
 
+    best_val_loss = float("inf")
+    best_network = copy_network(network)
+    best_epoch = 0
+
     for epoch in range(epochs):
-        for i in range(len(X_train)):
+        indices = list(range(len(X_train)))
+        random.shuffle(indices)
+
+        for i in indices:
             y_pred, cache = forward_sample(network, X_train[i])
             y_true = one_hot_encode(y_train[i])
-            backward_sample(network, cache, y_true, learning_rate)
+
+            gradients = compute_gradients(network, cache, y_true)
+            apply_gradients(network, gradients, learning_rate)
 
         train_loss, train_acc = evaluate_dataset(network, X_train, y_train)
         valid_loss, valid_acc = evaluate_dataset(network, X_valid, y_valid)
@@ -307,6 +367,11 @@ def train(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate):
         history["accuracy"].append(train_acc)
         history["val_accuracy"].append(valid_acc)
 
+        if valid_loss < best_val_loss:
+            best_val_loss = valid_loss
+            best_network = copy_network(network)
+            best_epoch = epoch + 1
+
         print(
             f"epoch {epoch + 1:03d}/{epochs} - "
             f"loss: {train_loss:.4f} - "
@@ -315,7 +380,9 @@ def train(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate):
             f"val_accuracy: {valid_acc:.4f}"
         )
 
-    return history
+    print(f"\nBest validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
+
+    return history, best_network
 
 
 def save_model(path, network, means, stds):
@@ -327,6 +394,38 @@ def save_model(path, network, means, stds):
 
     with open(path, "w", encoding="utf-8") as file:
         json.dump(model_data, file)
+
+
+def plot_loss(history, path):
+    epochs = range(1, len(history["loss"]) + 1)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, history["loss"], label="train loss")
+    plt.plot(epochs, history["val_loss"], label="validation loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Learning Curve - Loss")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
+
+def plot_accuracy(history, path):
+    epochs = range(1, len(history["accuracy"]) + 1)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs, history["accuracy"], label="train accuracy")
+    plt.plot(epochs, history["val_accuracy"], label="validation accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.title("Learning Curve - Accuracy")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
 
 
 def main():
@@ -358,7 +457,7 @@ def main():
             output_size=2
         )
 
-        history = train(
+        history, best_network = train(
             network,
             X_train,
             y_train,
@@ -368,8 +467,13 @@ def main():
             learning_rate=LEARNING_RATE
         )
 
-        save_model("model.json", network, means, stds)
-        print("\nModel saved to model.json")
+        save_model(MODEL_PATH, best_network, means, stds)
+        plot_loss(history, LOSS_PLOT_PATH)
+        plot_accuracy(history, ACCURACY_PLOT_PATH)
+
+        print(f"\nModel saved to {MODEL_PATH}")
+        print(f"Loss curve saved to {LOSS_PLOT_PATH}")
+        print(f"Accuracy curve saved to {ACCURACY_PLOT_PATH}")
 
         print("\nFinal metrics:")
         print(f"loss: {history['loss'][-1]:.4f}")
