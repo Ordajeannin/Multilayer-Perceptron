@@ -1,7 +1,7 @@
 import csv
 import math
 
-
+# charger le dataset à partir d'un fichier CSV
 def load_dataset(path):
     X = []
     y = []
@@ -28,15 +28,16 @@ def load_dataset(path):
     return X, y
 
 
+# calculer la moyenne 
 def compute_mean(values):
     return sum(values) / len(values)
 
-
+# calculer l'écart type
 def compute_std(values, mean):
     variance = sum((x - mean) ** 2 for x in values) / len(values)
     return math.sqrt(variance)
 
-
+# calculer les statistiques de normalisation (moyennes et écarts types) pour chaque colonne du dataset
 def compute_normalization_stats(X):
     if not X:
         raise ValueError("Empty dataset")
@@ -53,7 +54,7 @@ def compute_normalization_stats(X):
 
     return means, stds
 
-
+# normaliser le dataset en utilisant les moyennes et écarts types calculés
 def normalize_dataset(X, means, stds):
     X_normalized = []
 
@@ -72,13 +73,14 @@ def normalize_dataset(X, means, stds):
 
     return X_normalized
 
-
+# encoder les labels en one-hot encoding
 def one_hot_encode(label):
     if label == 0:
         return [1.0, 0.0]
     return [0.0, 1.0]
 
-
+# décoder les labels à partir du one-hot encoding
+# (one-hot encoding = [1.0, 0.0] pour "B" et [0.0, 1.0] pour "M")
 def label_to_text(label):
     if label == 1:
         return "M"

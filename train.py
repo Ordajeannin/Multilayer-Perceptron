@@ -19,11 +19,44 @@ from model_utils import (
     initialize_network,
     train_model,
     save_model,
+    forward_sample,
+    predict_class,
 )
 from plot_utils import (
     plot_loss,
     plot_accuracy,
 )
+from mlp_visualization import generate_all_visualizations
+
+
+def extract_weights_and_biases(network):
+    weights = []
+    biases = []
+
+    for layer in network:
+        if "weights" in layer and "biases" in layer:
+            weights.append(layer["weights"])
+            biases.append(layer["biases"])
+        elif "W" in layer and "b" in layer:
+            weights.append(layer["W"])
+            biases.append(layer["b"])
+        else:
+            raise ValueError("Impossible de trouver les poids/biais dans une couche du réseau")
+
+    return weights, biases
+
+
+def evaluate_for_visualization(network, X):
+    probabilities = []
+    y_pred = []
+
+    for sample in X:
+        probs, _ = forward_sample(network, sample)
+        pred = predict_class(probs)
+        probabilities.append(probs)
+        y_pred.append(pred)
+
+    return probabilities, y_pred
 
 
 def main():
@@ -69,6 +102,30 @@ def main():
         save_model(MODEL_PATH, best_network, means, stds)
         plot_loss(history, LOSS_PLOT_PATH)
         plot_accuracy(history, ACCURACY_PLOT_PATH)
+
+
+        weights, biases = extract_weights_and_biases(best_network)
+        probabilities, y_pred = evaluate_for_visualization(best_network, X_valid)
+
+        feature_names = [f"f{i}" for i in range(len(X_valid[0]))]
+        class_names = ["B", "M"]
+
+        generate_all_visualizations(
+            history=history,
+            weights=weights,
+            biases=biases,
+            x=X_valid,
+            y_true=y_valid,
+            y_pred=y_pred,
+            probabilities=probabilities,
+            sample=X_valid[0],
+            feature_names=feature_names,
+            class_names=class_names,
+            hidden_activation="relu",
+            output_activation="softmax",
+            output_dir="visualizations"
+        )
+
 
         print(f"\nModel saved to {MODEL_PATH}")
         print(f"Loss curve saved to {LOSS_PLOT_PATH}")
