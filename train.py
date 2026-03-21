@@ -8,6 +8,10 @@ from config import (
     MODEL_PATH,
     LOSS_PLOT_PATH,
     ACCURACY_PLOT_PATH,
+    EARLY_STOPPING_PATIENCE,
+    EARLY_STOPPING_MIN_DELTA,
+    HISTORY_PATH,
+    METRICS_PATH,
 )
 from data_utils import (
     load_dataset,
@@ -19,8 +23,11 @@ from model_utils import (
     initialize_network,
     train_model,
     save_model,
+    save_history,
     forward_sample,
     predict_class,
+    compute_classification_metrics,
+    save_metrics,
 )
 from plot_utils import (
     plot_loss,
@@ -96,16 +103,44 @@ def main():
             y_valid,
             epochs=EPOCHS,
             learning_rate=LEARNING_RATE,
-            one_hot_encode=one_hot_encode
+            one_hot_encode=one_hot_encode,
+            patience=EARLY_STOPPING_PATIENCE,
+            min_delta=EARLY_STOPPING_MIN_DELTA,
         )
 
         save_model(MODEL_PATH, best_network, means, stds)
+        save_history(HISTORY_PATH, history)
         plot_loss(history, LOSS_PLOT_PATH)
         plot_accuracy(history, ACCURACY_PLOT_PATH)
 
 
         weights, biases = extract_weights_and_biases(best_network)
         probabilities, y_pred = evaluate_for_visualization(best_network, X_valid)
+        metrics = compute_classification_metrics(y_valid, y_pred, positive_class=1)
+        
+        final_metrics = {
+            "train_loss": history["loss"][-1],
+            "train_accuracy": history["accuracy"][-1],
+            "val_loss": history["val_loss"][-1],
+            "val_accuracy": history["val_accuracy"][-1],
+            "best_epoch": history["best_epoch"],
+            "best_val_loss": history["best_val_loss"],
+            "precision": metrics["precision"],
+            "recall": metrics["recall"],
+            "f1": metrics["f1"],
+            "tp": metrics["tp"],
+            "tn": metrics["tn"],
+            "fp": metrics["fp"],
+            "fn": metrics["fn"],
+        }
+        save_metrics(METRICS_PATH, final_metrics)
+
+        print("\nValidation classification metrics:")
+        print(f"accuracy:  {metrics['accuracy']:.4f}")
+        print(f"precision: {metrics['precision']:.4f}")
+        print(f"recall:    {metrics['recall']:.4f}")
+        print(f"f1-score:  {metrics['f1']:.4f}")
+        print(f"tp: {metrics['tp']} - tn: {metrics['tn']} - fp: {metrics['fp']} - fn: {metrics['fn']}")
 
         feature_names = [f"f{i}" for i in range(len(X_valid[0]))]
         class_names = ["B", "M"]
@@ -121,7 +156,7 @@ def main():
             sample=X_valid[0],
             feature_names=feature_names,
             class_names=class_names,
-            hidden_activation="relu",
+            hidden_activation="sigmoid",
             output_activation="softmax",
             output_dir="visualizations"
         )
@@ -130,12 +165,16 @@ def main():
         print(f"\nModel saved to {MODEL_PATH}")
         print(f"Loss curve saved to {LOSS_PLOT_PATH}")
         print(f"Accuracy curve saved to {ACCURACY_PLOT_PATH}")
+        print(f"History saved to {HISTORY_PATH}")
 
         print("\nFinal metrics:")
         print(f"loss: {history['loss'][-1]:.4f}")
         print(f"accuracy: {history['accuracy'][-1]:.4f}")
         print(f"val_loss: {history['val_loss'][-1]:.4f}")
         print(f"val_accuracy: {history['val_accuracy'][-1]:.4f}")
+
+        print(f"best_epoch: {history['best_epoch']}")
+        print(f"best_val_loss: {history['best_val_loss']:.4f}")
 
     except Exception as e:
         print(f"Error: {e}")

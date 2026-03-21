@@ -87,6 +87,40 @@ def compute_layer_output(inputs, weights, biases, activation):
     return z_values, outputs
 
 
+
+def compute_classification_metrics(y_true, y_pred, positive_class=1):
+    tp = 0
+    tn = 0
+    fp = 0
+    fn = 0
+
+    for true, pred in zip(y_true, y_pred):
+        if true == positive_class and pred == positive_class:
+            tp += 1
+        elif true != positive_class and pred != positive_class:
+            tn += 1
+        elif true != positive_class and pred == positive_class:
+            fp += 1
+        elif true == positive_class and pred != positive_class:
+            fn += 1
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    accuracy = (tp + tn) / len(y_true) if len(y_true) > 0 else 0.0
+
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+    }
+
+
 def forward_sample(network, x):
     z1, a1 = compute_layer_output(
         x, network[0]["weights"], network[0]["biases"], "sigmoid"
@@ -209,7 +243,18 @@ def apply_gradients(network, gradients, learning_rate):
         network[0]["biases"][neuron_index] -= learning_rate * gradients["db1"][neuron_index]
 
 
-def train_model(network, X_train, y_train, X_valid, y_valid, epochs, learning_rate, one_hot_encode):
+def train_model(
+    network,
+    X_train,
+    y_train,
+    X_valid,
+    y_valid,
+    epochs,
+    learning_rate,
+    one_hot_encode,
+    patience=10,
+    min_delta=1e-4
+):
     history = {
         "loss": [],
         "val_loss": [],
@@ -217,6 +262,7 @@ def train_model(network, X_train, y_train, X_valid, y_valid, epochs, learning_ra
         "val_accuracy": []
     }
 
+    epochs_without_improvement = 0
     best_val_loss = float("inf")
     best_network = copy_network(network)
     best_epoch = 0
@@ -239,10 +285,17 @@ def train_model(network, X_train, y_train, X_valid, y_valid, epochs, learning_ra
         history["accuracy"].append(train_acc)
         history["val_accuracy"].append(valid_acc)
 
-        if valid_loss < best_val_loss:
+        if valid_loss < best_val_loss - min_delta:
             best_val_loss = valid_loss
             best_network = copy_network(network)
             best_epoch = epoch + 1
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement >= patience:
+            print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+            break
 
         print(
             f"epoch {epoch + 1:03d}/{epochs} - "
@@ -253,6 +306,8 @@ def train_model(network, X_train, y_train, X_valid, y_valid, epochs, learning_ra
         )
 
     print(f"\nBest validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
+    history["best_epoch"] = best_epoch
+    history["best_val_loss"] = best_val_loss
 
     return history, best_network
 
@@ -266,6 +321,16 @@ def save_model(path, network, means, stds):
 
     with open(path, "w", encoding="utf-8") as file:
         json.dump(model_data, file)
+
+
+def save_history(path, history):
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(history, file, indent=4)
+
+
+def save_metrics(path, metrics):
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(metrics, file, indent=4)
 
 
 def load_model(path):

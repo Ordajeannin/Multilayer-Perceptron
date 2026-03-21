@@ -9,12 +9,14 @@ from model_utils import (
     load_model,
     forward_sample,
     predict_class,
+    compute_classification_metrics,
 )
 
 
 def evaluate_predictions(network, X, y):
     correct = 0
     predictions = []
+    y_pred = []
 
     for i in range(len(X)):
         probabilities, _ = forward_sample(network, X[i])
@@ -23,6 +25,8 @@ def evaluate_predictions(network, X, y):
 
         if predicted_label == true_label:
             correct += 1
+
+        y_pred.append(predicted_label)
 
         predictions.append({
             "index": i,
@@ -33,7 +37,7 @@ def evaluate_predictions(network, X, y):
         })
 
     accuracy = correct / len(X)
-    return accuracy, predictions
+    return accuracy, predictions, y_pred
 
 
 def main():
@@ -50,11 +54,18 @@ def main():
         X, y = load_dataset(dataset_path)
         X = normalize_dataset(X, means, stds)
 
-        accuracy, predictions = evaluate_predictions(network, X, y)
+        accuracy, predictions, y_pred = evaluate_predictions(network, X, y)
+        metrics = compute_classification_metrics(y, y_pred, positive_class=1)
 
         print(f"Dataset shape: ({len(X)}, {len(X[0])})")
-        print(f"Accuracy: {accuracy:.4f}")
-
+        print(f"Accuracy:  {metrics['accuracy']:.4f}")
+        print(f"Precision: {metrics['precision']:.4f}")
+        print(f"Recall:    {metrics['recall']:.4f}")
+        print(f"F1-score:  {metrics['f1']:.4f}")
+        print(
+            f"TP: {metrics['tp']} - TN: {metrics['tn']} - "
+            f"FP: {metrics['fp']} - FN: {metrics['fn']}"
+        )
         print("\nFirst 10 predictions:")
         for prediction in predictions[:10]:
             print(
