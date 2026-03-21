@@ -1,5 +1,6 @@
 import csv
 import math
+import random
 
 # charger le dataset à partir d'un fichier CSV
 def load_dataset(path):
@@ -85,3 +86,40 @@ def label_to_text(label):
     if label == 1:
         return "M"
     return "B"
+
+
+def make_k_folds(X, y, k=5, seed=42):
+    indices = list(range(len(X)))
+
+    rng = random.Random(seed)
+    rng.shuffle(indices)
+
+    fold_sizes = [len(X) // k] * k
+    for i in range(len(X) % k):
+        fold_sizes[i] += 1
+
+    folds = []
+    start = 0
+    for fold_size in fold_sizes:
+        fold_indices = indices[start:start + fold_size]
+        start += fold_size
+
+        X_fold = [X[i] for i in fold_indices]
+        y_fold = [y[i] for i in fold_indices]
+        folds.append((X_fold, y_fold))
+
+    return folds
+
+
+def merge_folds(folds, valid_index):
+    X_train = []
+    y_train = []
+    X_valid, y_valid = folds[valid_index]
+
+    for i, (X_fold, y_fold) in enumerate(folds):
+        if i == valid_index:
+            continue
+        X_train.extend(X_fold)
+        y_train.extend(y_fold)
+
+    return X_train, y_train, X_valid, y_valid

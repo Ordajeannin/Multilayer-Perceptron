@@ -336,6 +336,13 @@ def save_metrics(path, metrics):
     with open(path, "w", encoding="utf-8") as file:
         json.dump(metrics, file, indent=4)
 
+def save_json(path, data):
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4)
 
 def load_model(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -343,3 +350,11 @@ def load_model(path):
         model_data = json.load(file)
 
     return model_data["network"], model_data["means"], model_data["stds"]
+
+def compute_mean(values):
+    return sum(values) / len(values)
+
+
+def compute_std(values, mean):
+    variance = sum((x - mean) ** 2 for x in values) / len(values)
+    return math.sqrt(variance)
