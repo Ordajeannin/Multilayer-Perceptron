@@ -1,12 +1,15 @@
 LEARNING_RATE = 0.01
 EPOCHS = 50
-HIDDEN_SIZES = [16, 16]
+HIDDEN_SIZES = [16, 8]
 EARLY_STOPPING_PATIENCE = 10
 EARLY_STOPPING_MIN_DELTA = 1e-4
 
 
-MODEL_PATH = "model/model.json"
-LOSS_PLOT_PATH = "files/loss.png"
-ACCURACY_PLOT_PATH = "files/accuracy.png"
-HISTORY_PATH = "files/history.json"
-METRICS_PATH = "files/metrics.json"
+RUN_NAME = "16_8_lr001"
+
+
+LOSS_PLOT_PATH = f"files/{RUN_NAME}/loss_{RUN_NAME}.png"
+ACCURACY_PLOT_PATH = f"files/{RUN_NAME}/accuracy_{RUN_NAME}.png"
+HISTORY_PATH = f"files/{RUN_NAME}/history_{RUN_NAME}.json"
+MODEL_PATH = f"model/model_{RUN_NAME}.json"
+METRICS_PATH = f"files/{RUN_NAME}/metrics_{RUN_NAME}.json"

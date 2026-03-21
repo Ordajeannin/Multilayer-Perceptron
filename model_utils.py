@@ -1,6 +1,8 @@
 import json
 import math
 import random
+import os
+import json
 
 
 def initialize_layer(input_size, output_size):
@@ -318,22 +320,25 @@ def save_model(path, network, means, stds):
         "means": means,
         "stds": stds
     }
-
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as file:
         json.dump(model_data, file)
 
 
 def save_history(path, history):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as file:
         json.dump(history, file, indent=4)
 
 
 def save_metrics(path, metrics):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as file:
         json.dump(metrics, file, indent=4)
 
 
 def load_model(path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "r", encoding="utf-8") as file:
         model_data = json.load(file)
 
